@@ -145,7 +145,7 @@ void writeBufferToOutput(char buffer[])
     FILE *f;
     char fileName[1000];
 
-    sprintf(fileName, "result_OMP.txt");
+    sprintf(fileName, "result_MPI.txt");
 
     f = fopen(fileName, "a+");
     if (f == NULL)
@@ -499,7 +499,6 @@ void processMaster(int nProc, char* directory)
         for (n = 1; n < nProc; n++)
         {
             int procFound;
-
             MPI_Recv(&procFound, 1, MPI_INT,
                 n, 0,
                 MPI_COMM_WORLD,
@@ -537,6 +536,7 @@ void processMaster(int nProc, char* directory)
         {
             if (!searchMode)
             {
+                writeToBuffer(buffer, textIndex, patternIndex, -2);
                 printf("Test %i, search mode %i, text %i, pattern %i, found patterns at %i\n", testNumber, searchMode, textIndex, patternIndex, -2);
             }
             else
@@ -545,6 +545,7 @@ void processMaster(int nProc, char* directory)
                 int i;
                 for (i = 0; i < total; i++)
                 {
+                    writeToBuffer(buffer, textIndex, patternIndex, results[i]);
                     printf("%i ", results[i]);
                 }
                 printf("\n");
@@ -555,6 +556,7 @@ void processMaster(int nProc, char* directory)
         {
             int r = -1;
             printf("Test %i, search mode %i, text %i, pattern %i, found patterns at %i\n", testNumber, searchMode, textIndex, patternIndex, r);
+            writeToBuffer(buffer, textIndex, patternIndex, -1);
         }
 
 
@@ -569,26 +571,21 @@ void processMaster(int nProc, char* directory)
         MPI_Bcast(&finished, 1, MPI_INT,
             MASTER, MPI_COMM_WORLD);
 
-        //free(results);
-
     }
 
-
+    writeBufferToOutput(buffer);
 
     int i;
 
-    //printf("\nProgram finished.\n");
 
 }
 
 void processSlave(int procId)
 {
-    // Set up the receive for the flag from MASTER declaring the end
-    //int done = 0;
+
     int doneFlag = 0;
     MPI_Request request;
     MPI_Status status;
-    //MPI_Irecv(&done, 1, MPI_INT, MASTER, 1, MPI_COMM_WORLD, &request); // X
 
     int finished = 0;
 
