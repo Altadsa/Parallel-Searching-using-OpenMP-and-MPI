@@ -124,6 +124,37 @@ int readControl()
     return testCount;
 }
 
+void writeBufferToOutput(char buffer[])
+{
+    FILE* f;
+    char fileName[1000];
+
+    sprintf(fileName, "result_OMP.txt");
+
+    f = fopen(fileName, "a+");
+    if (f == NULL)
+    {
+        fprintf(stderr, "writeBufferToOutput: could not open file %s", fileName);
+        return;
+    }
+    fprintf(f, buffer);
+    fclose(f);
+
+    // clear buffer
+    buffer[0] = '\0';
+}
+
+void writeToBuffer(char buffer[], int textNumber, int patternNumber, int patternLocation)
+{
+    // write full buffer to output and clear
+    if (strlen(buffer) > BUFFER_SIZE - BYTES_PER_LINE)
+    {
+        writeBufferToOutput(buffer);
+    }
+    // append new result to buffer
+    sprintf(buffer + strlen(buffer), "%i %i %i\n", textNumber, patternNumber, patternLocation);
+}
+
 void findFirstOccurrence(int textNumber, int patternNumber, char buffer[])
 {
     char *text = textData[textNumber];
@@ -255,36 +286,7 @@ void findAllOccurrences(int textNumber, int patternNumber, char buffer[])
 
 }
 
-void writeBufferToOutput(char buffer[])
-{
-    FILE *f;
-    char fileName[1000];
 
-    sprintf(fileName, "result_OMP.txt");
-
-    f = fopen(fileName, "a+");
-    if (f == NULL)
-    {
-        fprintf(stderr, "writeBufferToOutput: could not open file %s", fileName);
-        return;
-    }
-    fprintf(f, buffer);
-    fclose(f);
-
-    // clear buffer
-    buffer[0] = '\0';
-}
-
-void writeToBuffer(char buffer[], int textNumber, int patternNumber, int patternLocation)
-{
-    // write full buffer to output and clear
-    if (strlen(buffer) > BUFFER_SIZE - BYTES_PER_LINE)
-    {
-        writeBufferToOutput(buffer);
-    }
-    // append new result to buffer
-    sprintf(buffer + strlen(buffer), "%i %i %i\n", textNumber, patternNumber, patternLocation);
-}
 
 void runTest(int searchType, int textNumber, int patternNumber, char buffer[])
 {
