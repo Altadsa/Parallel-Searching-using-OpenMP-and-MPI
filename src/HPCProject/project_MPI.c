@@ -18,22 +18,21 @@
 #define SEARCH_LENGTH 1024
 
 
-//char controlData[MAX_TESTS][3];
-
 int maxTexts;
 int maxPatterns;
 
+#pragma region I/O Functions
 void outOfMemory()
 {
-    fprintf (stderr, "Out of memory\n");
-    exit (0);
+    fprintf(stderr, "Out of memory\n");
+    exit(0);
 }
 
-void readFromFile (FILE *f, char **data, int *length)
+void readFromFile(FILE* f, char** data, int* length)
 {
     int ch;
     int allocatedLength;
-    char *result;
+    char* result;
     int resultLength = 0;
 
     allocatedLength = 0;
@@ -41,18 +40,18 @@ void readFromFile (FILE *f, char **data, int *length)
 
 
 
-    ch = fgetc (f);
+    ch = fgetc(f);
     while (ch >= 0)
     {
         resultLength++;
         if (resultLength > allocatedLength)
         {
             allocatedLength += 10000;
-            result = (char *) realloc (result, sizeof(char)*allocatedLength);
+            result = (char*)realloc(result, sizeof(char) * allocatedLength);
             if (result == NULL)
                 outOfMemory();
         }
-        result[resultLength-1] = ch;
+        result[resultLength - 1] = ch;
         ch = fgetc(f);
     }
     *data = result;
@@ -106,13 +105,13 @@ int readPatterns(char* directory, char** patternData, int* patternLengths)
 
 int readControl(char* directory, char controlData[][3])
 {
-    FILE *f;
+    FILE* f;
     char fileName[1000];
 
 #ifdef DOS
-    sprintf (fileName, "%s\\control.txt", directory);
+    sprintf(fileName, "%s\\control.txt", directory);
 #else
-    sprintf (fileName, "%s/control.txt", directory);
+    sprintf(fileName, "%s/control.txt", directory);
 #endif
 
     f = fopen(fileName, "r");
@@ -142,7 +141,7 @@ int readControl(char* directory, char controlData[][3])
 
 void writeBufferToOutput(char buffer[])
 {
-    FILE *f;
+    FILE* f;
     char fileName[1000];
 
     sprintf(fileName, "result_MPI.txt");
@@ -170,135 +169,9 @@ void writeToBuffer(char buffer[], int textNumber, int patternNumber, int pattern
     // append new result to buffer
     sprintf(buffer + strlen(buffer), "%i %i %i\n", textNumber, patternNumber, patternLocation);
 }
+#pragma endregion
 
-int findOccurrence(char* textData, char* patternData, int textLength, int patternLength)
-{
-    int i, j, k;
-    int found = 0;
-
-    i = 0;
-    j = 0;
-    k = 0;
-
-    int lastI = textLength - patternLength;
-
-    while (i <= lastI && j < patternLength)
-    {
-        if (textData[k] == patternData[j])
-        {
-            k++;
-            j++;
-        }
-        else
-        {
-            i++;
-            k = i;
-            j = 0;
-        }
-    }
-
-    if (j == patternLength)
-    {
-        return 1;
-    }
-    else
-        return 0;
-}
-
-int findAllOccurrences(char* textData, char* patternData, int displacement, int textLength, int patternLength, int** results)
-{
-    int i, j, k;
-
-    //int occurrences[64];
-    int* occurrences = (int*)malloc(sizeof(int));
-
-    i = 0;
-    j = 0;
-    k = 0;
-
-    int lastI = textLength - patternLength;
-    int found = 0;
-
-    while (i <= lastI)
-    {
-        if (textData[k] == patternData[j])
-        {
-            k++;
-            j++;
-
-            if (j == patternLength)
-            {
-                //results = (int*)realloc(results, ++found * sizeof(int));
-                
-                found++;
-                if (found > 1)
-                {
-                    occurrences = (int*)realloc(occurrences, found * sizeof(int));
-                    occurrences[found - 1] = (i + displacement);
-                }
-                else
-                    occurrences[found-1] = (i + displacement);
-            }
-
-        }
-        else
-        {
-            i++;
-            k = i;
-            j = 0;
-        }
-    }
-
-    if (found > 0)
-    {
-        //*results = (int*)realloc(*results, found * sizeof(int));
-        *results = occurrences;
-        //printf("\n");
-        //for (i = 0; i < found; i++)
-        //{
-        //    //*results[i] = occurrences[i];
-        //    printf("%i ", occurrences[i]);
-        //}
-        //printf("\n");
-    }
-
-
-    return found;
-
-}
-
-int processData(int procId, int searchMode, char* textData, char* patternData, int displacement, int textLength, int patternLength, int** results)
-{
-
-    if (searchMode == 0)
-    {
-        int result = findOccurrence(textData, patternData, textLength, patternLength);
-        if (result)
-        {
-            //printf("Proc %i found pattern at position %i\n", procId, result);
-            *results = (int*)malloc(1 * sizeof(int));
-            *results[0] = result;
-            return 1;
-        }
-        return 0;
-        
-    }
-    else
-    {
-        //results = (int*)malloc(1*sizeof(int));
-        int* dResults = (int*)malloc(sizeof(int));
-        int found = findAllOccurrences(textData, patternData, displacement, textLength, patternLength, &dResults);
-        *results = dResults;
-        //int i;
-        //printf("Found = %i\n", found);
-        //for (i = 0; i < found; i++)
-        //{
-        //    printf("Proc %i found pattern at position %i\n", procId, results[i]);
-        //}
-        return found;
-    }
-}
-
+#pragma region Helper Functions
 /// <summary>
 /// Distributes text length among processes.
 /// </summary>
@@ -333,8 +206,6 @@ void divideWorkload(int* procWork, int nProc, int textLength, int patternLength)
         }
     }
 
-
-
     // if the pattern length is greater than 1, we assign extra work just 
     // to detect any patterns occurring across 2 processes
     if (patternLength > 1)
@@ -345,9 +216,6 @@ void divideWorkload(int* procWork, int nProc, int textLength, int patternLength)
             (*(procWork + i)) += patternLength;
         }
     }
-
-
-
 }
 
 /// <summary>
@@ -386,6 +254,12 @@ void debugPrintWorkload(int* procWorkload, int nProc)
     }
 }
 
+/// <summary>
+/// Prints out text displacement of each process
+/// For debugging purposes only.
+/// </summary>
+/// <param name="displacement">Pointer to array containing the displacements for each process.</param>
+/// <param name="nProc">The number of processes used in the program.</param>
 void debugPrintDisplacement(int* displacement, int nProc)
 {
     int i;
@@ -394,12 +268,136 @@ void debugPrintDisplacement(int* displacement, int nProc)
         printf("\nProcess %i start at text index %i\n", i, (*(displacement + i)));
     }
 }
+#pragma endregion
+
+
+int findOccurrence(int procId, char* textData, char* patternData, int textLength, int patternLength)
+{
+    MPI_Request request;
+
+    int i, j, k;
+    int found = 0;
+
+    i = 0;
+    j = 0;
+    k = 0;
+
+    int lastI = textLength - patternLength;
+
+    while (i <= lastI && j < patternLength)
+    {
+        
+
+        if (textData[k] == patternData[j])
+        {
+            k++;
+            j++;
+        }
+        else
+        {
+            i++;
+            k = i;
+            j = 0;
+        }
+    }
+
+    if (j == patternLength)
+    {
+        return 1;
+    }
+    else
+        return 0;
+}
+
+int findAllOccurrences(char* textData, char* patternData, int displacement, int textLength, int patternLength, int** results)
+{
+    int i, j, k;
+
+    int* occurrences = (int*)malloc(sizeof(int));
+
+    i = 0;
+    j = 0;
+    k = 0;
+
+    int lastI = textLength - patternLength;
+    int found = 0;
+
+    while (i <= lastI)
+    {
+        if (textData[k] == patternData[j])
+        {
+            k++;
+            j++;
+
+            if (j == patternLength)
+            {                
+                found++;
+                if (found > 1)
+                {
+                    occurrences = (int*)realloc(occurrences, found * sizeof(int));
+                    occurrences[found - 1] = (i + displacement);
+                }
+                else
+                    occurrences[found-1] = (i + displacement);
+            }
+
+        }
+        else
+        {
+            i++;
+            k = i;
+            j = 0;
+        }
+    }
+
+    if (found > 0)
+    {
+        *results = occurrences;
+    }
+
+    return found;
+
+}
+
+int processData(int procId, int searchMode, char* textData, char* patternData, int displacement, int textLength, int patternLength, int** results)
+{
+
+    if (searchMode == 0)
+    {
+        int result = findOccurrence(procId, textData, patternData, textLength, patternLength);
+        if (result)
+        {
+            //printf("Proc %i found pattern at position %i\n", procId, result);
+            *results = (int*)malloc(1 * sizeof(int));
+            *results[0] = result;
+            return 1;
+        }
+        return 0;
+        
+    }
+    else
+    {
+        int* dResults = (int*)malloc(sizeof(int));
+        int found = findAllOccurrences(textData, patternData, displacement, textLength, patternLength, &dResults);
+        *results = dResults;
+        //int i;
+        //printf("Found = %i\n", found);
+        //for (i = 0; i < found; i++)
+        //{
+        //    printf("Proc %i found pattern at position %i\n", procId, results[i]);
+        //}
+        return found;
+    }
+}
+
 
 void processMaster(int nProc, char* directory)
 {
 
 #pragma region Declarations
+
     char buffer[BUFFER_SIZE];
+    buffer[0] = '\0';
 
     char* textData[MAX_TEXTS];
     int textLengths[MAX_TEXTS];
@@ -554,8 +552,7 @@ void processMaster(int nProc, char* directory)
         }
         else
         {
-            int r = -1;
-            printf("Test %i, search mode %i, text %i, pattern %i, found patterns at %i\n", testNumber, searchMode, textIndex, patternIndex, r);
+            printf("Test %i, search mode %i, text %i, pattern %i, found patterns at %i\n", testNumber, searchMode, textIndex, patternIndex, -1);
             writeToBuffer(buffer, textIndex, patternIndex, -1);
         }
 

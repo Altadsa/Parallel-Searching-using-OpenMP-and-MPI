@@ -206,7 +206,7 @@ void findFirstOccurrence(int textNumber, int patternNumber, char buffer[])
                 #pragma omp critical(set)
                 {
                     patternLoc = i;
-                    writeToBuffer(buffer, textNumber, patternNumber, i);
+                    writeToBuffer(buffer, textNumber, patternNumber, -2);
                 }
             }
             else
