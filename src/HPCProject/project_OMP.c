@@ -155,7 +155,7 @@ void writeToBuffer(char buffer[], int textNumber, int patternNumber, int pattern
     sprintf(buffer + strlen(buffer), "%i %i %i\n", textNumber, patternNumber, patternLocation);
 }
 
-void findFirstOccurrence(int textNumber, int patternNumber, char buffer[])
+void findOccurrence(int textNumber, int patternNumber, char buffer[])
 {
     char *text = textData[textNumber];
     int textLength = textLengths[textNumber];
@@ -231,51 +231,37 @@ void findAllOccurrences(int textNumber, int patternNumber, char buffer[])
     char *pattern = patternData[patternNumber];
     int patternLength = patternLengths[patternNumber];
 
-    int i, j, k, lastI, stopSearch;
+    int i, j, k, lastI;
     i=0;
     j=0;
     k=0;
     lastI = textLength-patternLength;
-    stopSearch=0;
 
     int patternLoc = -1;
 
     #pragma omp parallel for default(none) shared(buffer, patternLoc) \
-    private(j, k) firstprivate(stopSearch, text, textLength, pattern, patternLength, lastI, textNumber, patternNumber) \
-    num_threads(4) schedule(static,4)
+    private(j, k) firstprivate(text, textLength, pattern, patternLength, lastI, textNumber, patternNumber) \
+    num_threads(4) schedule(dynamic,4)
     for (i = 0; i <= lastI; i++)
     {
         k = i;
         j = 0;
         // since the pattern can be found in the middle of the loop
         // we check if pattern is found every loop to stop making comparisons as soon as possible.
-        while (j < patternLength && stopSearch == 0)
+        while (j < patternLength && text[k] == pattern[j])
         {
-            if (text[k] == pattern[j])
-            {
-                k++;
-                j++;
-            }
-            else
-            {
-                stopSearch = 1;
-            }
+            k++;
+            j++;
         }
         // condition can only be true once assuming only one occurrence of pattern in text.
         if (j == patternLength)
         {
-            writeToBuffer(buffer, textNumber, patternNumber, i);
-            if (patternLoc == -1)
+            
+            #pragma omp critical(set)
             {
-                #pragma omp critical(set)
-                {
-                    patternLoc = 1;
-                }
+                writeToBuffer(buffer, textNumber, patternNumber, i);
+                patternLoc = 1;
             }
-        }
-        else
-        {
-            stopSearch = 0;
         }
     }
 
@@ -300,7 +286,7 @@ void runTest(int searchType, int textNumber, int patternNumber, char buffer[])
     if (searchType == 0)
     {
         printf("Searching for pattern occurrence\n");
-        findFirstOccurrence(textNumber, patternNumber, buffer);
+        findOccurrence(textNumber, patternNumber, buffer);
     }
     else
     {
@@ -311,6 +297,14 @@ void runTest(int searchType, int textNumber, int patternNumber, char buffer[])
 
 
 }
+
+long getNanos(void)
+{
+    struct timespec ts;
+    timespec_get(&ts, TIME_UTC);
+    return (long)ts.tv_sec * 1000000000L + ts.tv_nsec;
+}
+
 
 int main(int argc, char **argv)
 {
@@ -333,11 +327,21 @@ int main(int argc, char **argv)
     char buffer[BUFFER_SIZE];
     sprintf(buffer, "");
 
+    long elapsedTime = getNanos();
+
     int idx = 0;
     for (idx; idx < testCount; idx++)
     {
+        long time = getNanos();
+
         runTest(controlData[idx][0],controlData[idx][1],controlData[idx][2], buffer);
+
+        time = getNanos() - time;
+        printf("\nTest %i elapsed time = %.09f\n\n", idx, (double)time / 1.0e9);
     }
+
+    elapsedTime = getNanos() - elapsedTime;
+    printf("\n Program elapsed time = %.09f\n\n", (double)elapsedTime / 1.0e9);
 
     writeBufferToOutput(buffer);
 
