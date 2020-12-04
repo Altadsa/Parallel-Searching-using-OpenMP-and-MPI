@@ -18,6 +18,8 @@
 #define SEARCH_LENGTH 1024
 
 #define EXECUTE 66
+#define PROCESS_DONE 67
+#define PROCESS_FOUND 68
 
 int maxTexts;
 int maxPatterns;
@@ -279,11 +281,92 @@ long getNanos(void)
 
 #pragma endregion
 
+int masterFindOccurrence(char* textData, char* patternData, int textLength, int patternLength, int displacement)
+{
+    MPI_Status status;
+
+    int masterTracker[4] = {0, 0, 0, 0};
+
+    int i, j, k;
+    int found = 0;
+
+    int lastI = textLength - patternLength;
+
+    i = 0;
+    j = 0;
+    k = 0;
+
+    int message = 0;
+
+    while (i <= lastI && j < patternLength && !found)
+    {
+        k++;
+        j++;
+
+        if (textData[k] == patternData[j])
+        {
+            k++;
+            j++;
+        }
+        else
+        {
+            i++;
+            k = i;
+            j = 0;
+        }
+
+        MPI_Iprobe(MPI_ANY_SOURCE, PROCESS_DONE, MPI_COMM_WORLD, &message, MPI_STATUS_IGNORE);
+
+        if (message)
+        {
+            int slaveResult = 0;
+
+            MPI_Recv(&slaveResult, 1, MPI_INT, MPI_ANY_SOURCE, PROCESS_DONE, MPI_COMM_WORLD, &status);
+            printf("\nMPI Source: %i\n", status.MPI_SOURCE);
+            masterTracker[status.MPI_SOURCE] = 1;
+
+            if (slaveResult)
+            {
+                int n;
+                for (n = 1; n < 4; n++)
+                {
+                    if (!masterTracker[n])
+                    {
+                        MPI_Send(&slaveResult, 1, MPI_INT, MASTER, EXECUTE, MPI_COMM_WORLD);
+                    }
+                }
+                return found;
+            }
+
+            //printf("Received value of %i from process %i into process %i\n", found, status.MPI_SOURCE, procId);
+
+        }
+
+    }
+
+    if (j == patternLength)
+    {
+        printf("\nFound by process %i at position %i\n", MASTER, (i + displacement));
+        found = 1;
+        int n;
+        for (n = 1; n < 4; n++)
+        {
+            if (!masterTracker[n])
+            {
+                MPI_Send(&found, 1, MPI_INT, MASTER, EXECUTE, MPI_COMM_WORLD);
+            }
+        }
+    }
+
+    return found;
+
+}
 
 int findOccurrence(int procId, char* textData, char* patternData, int textLength, int patternLength, int displacement)
 {
     MPI_Request request;
     MPI_Status status;
+
 
     int i, j, k;
     int found = 0;
@@ -298,7 +381,8 @@ int findOccurrence(int procId, char* textData, char* patternData, int textLength
 
     while (i <= lastI && j < patternLength && !found)
     {
-        
+        k++;
+        j++;
 
         if (textData[k] == patternData[j])
         {
@@ -312,19 +396,14 @@ int findOccurrence(int procId, char* textData, char* patternData, int textLength
             j = 0;
         }
 
-        MPI_Iprobe(MPI_ANY_SOURCE, EXECUTE, MPI_COMM_WORLD, &message, MPI_STATUS_IGNORE);
+        MPI_Iprobe(MASTER, EXECUTE, MPI_COMM_WORLD, &message, MPI_STATUS_IGNORE);
 
         if (message)
         {
-            MPI_Recv(&found, 1, MPI_INT, MPI_ANY_SOURCE, EXECUTE, MPI_COMM_WORLD, &status);
+            MPI_Recv(&found, 1, MPI_INT, MASTER, EXECUTE, MPI_COMM_WORLD, &status);
             printf("Received value of %i from process %i into process %i\n", found, status.MPI_SOURCE, procId);
-            //if (procId == MASTER)
-            //    MPI_Recv(&found, 1, MPI_INT, MPI_ANY_SOURCE, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-            //else
-            //    MPI_Bcast(&found, 1, MPI_INT, MASTER, MPI_COMM_WORLD);
-            //MPI_Test(&request, &found, &status);
+            return found;
         }
-
 
     }
 
@@ -332,18 +411,11 @@ int findOccurrence(int procId, char* textData, char* patternData, int textLength
     {
         printf("\nFound by process %i at position %i\n", procId, (i + displacement));
         found = 1;
-        int x;
-        for (x = 0; x < 4; x++)
-        {
-            if (x == procId)
-                continue;
-            MPI_Send(&found, 1, MPI_INT, x, EXECUTE, MPI_COMM_WORLD);
-        }
-
-        return 1;
     }
-    else
-        return 0;
+
+    MPI_Send(&found, 1, MPI_INT, MASTER, PROCESS_DONE, MPI_COMM_WORLD);
+
+    return found;
 }
 
 int findAllOccurrences(int procId, char* textData, char* patternData, int displacement, int textLength, int patternLength, int** results)
@@ -407,15 +479,19 @@ int processData(int procId, int searchMode, char* textData, char* patternData, i
     //printf("Proc % displacement = %i\n", procId, displacement);
     if (searchMode == 0)
     {
-        int result = findOccurrence(procId, textData, patternData, textLength, patternLength, displacement);
+        int result;
+        if (procId == MASTER)
+            result = masterFindOccurrence(textData, patternData, textLength, patternLength, displacement);
+        else
+            result = findOccurrence(procId, textData, patternData, textLength, patternLength, displacement);
+        *results = (int*)malloc(1 * sizeof(int));
         if (result)
         {
             //printf("Proc %i found pattern at position %i\n", procId, result);
             *results = (int*)malloc(1 * sizeof(int));
             *results[0] = result;
-            return 1;
         }
-        return 0;
+        return result;
         
     }
     else
@@ -568,6 +644,8 @@ void processMaster(int nProc, char* directory)
         int found = processData(MASTER, searchMode, textData[textIndex], patternData[patternIndex], masterDispls, nElements, patternLengths[patternIndex], &results);
         int total = found;
 
+        printf("\nI the Master, have processed my text.\n");
+
         int j = found;
         int n;
         for (n = 1; n < nProc; n++)
@@ -586,6 +664,9 @@ void processMaster(int nProc, char* directory)
                     MPI_COMM_WORLD,
                     MPI_STATUS_IGNORE);
 
+
+                if (procFound == 0)
+                    continue;
 
                 total += procFound;
 
