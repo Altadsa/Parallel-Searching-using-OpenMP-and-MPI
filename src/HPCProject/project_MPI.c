@@ -17,6 +17,7 @@
 #define MASTER 0
 #define SEARCH_LENGTH 1024
 
+#define EXECUTE 66
 
 int maxTexts;
 int maxPatterns;
@@ -213,7 +214,7 @@ void divideWorkload(int* procWork, int nProc, int textLength, int patternLength)
         // assign overflow to first processes
         for (i = 0; i < (nProc - 1); i++)
         {
-            (*(procWork + i)) += patternLength;
+            (*(procWork + i)) += (patternLength - 1);
         }
     }
 }
@@ -234,7 +235,7 @@ void setDisplacement(int* displs, int* procWork, int nProc, int patternLength)
         if (patternLength == 1)
             displs[i] = displs[i - 1] + (procWork[i - 1]);
         else
-            displs[i] = displs[i - 1] + (procWork[i - 1] - patternLength);
+            displs[i] = displs[i - 1] + (procWork[i - 1] - (patternLength - 1));
         //printf("Process %i displacement = %i\n", i, displs[i]);
     }
 }
@@ -268,12 +269,21 @@ void debugPrintDisplacement(int* displacement, int nProc)
         printf("\nProcess %i start at text index %i\n", i, (*(displacement + i)));
     }
 }
+
+long getNanos(void)
+{
+    struct timespec ts;
+    timespec_get(&ts, TIME_UTC);
+    return (long)ts.tv_sec * 1000000000L + ts.tv_nsec;
+}
+
 #pragma endregion
 
 
-int findOccurrence(int procId, char* textData, char* patternData, int textLength, int patternLength)
+int findOccurrence(int procId, char* textData, char* patternData, int textLength, int patternLength, int displacement)
 {
     MPI_Request request;
+    MPI_Status status;
 
     int i, j, k;
     int found = 0;
@@ -284,7 +294,9 @@ int findOccurrence(int procId, char* textData, char* patternData, int textLength
 
     int lastI = textLength - patternLength;
 
-    while (i <= lastI && j < patternLength)
+    int message;
+
+    while (i <= lastI && j < patternLength && !found)
     {
         
 
@@ -299,17 +311,42 @@ int findOccurrence(int procId, char* textData, char* patternData, int textLength
             k = i;
             j = 0;
         }
+
+        MPI_Iprobe(MPI_ANY_SOURCE, EXECUTE, MPI_COMM_WORLD, &message, MPI_STATUS_IGNORE);
+
+        if (message)
+        {
+            MPI_Recv(&found, 1, MPI_INT, MPI_ANY_SOURCE, EXECUTE, MPI_COMM_WORLD, &status);
+            printf("Received value of %i from process %i into process %i\n", found, status.MPI_SOURCE, procId);
+            //if (procId == MASTER)
+            //    MPI_Recv(&found, 1, MPI_INT, MPI_ANY_SOURCE, 0, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            //else
+            //    MPI_Bcast(&found, 1, MPI_INT, MASTER, MPI_COMM_WORLD);
+            //MPI_Test(&request, &found, &status);
+        }
+
+
     }
 
     if (j == patternLength)
     {
+        printf("\nFound by process %i at position %i\n", procId, (i + displacement));
+        found = 1;
+        int x;
+        for (x = 0; x < 4; x++)
+        {
+            if (x == procId)
+                continue;
+            MPI_Send(&found, 1, MPI_INT, x, EXECUTE, MPI_COMM_WORLD);
+        }
+
         return 1;
     }
     else
         return 0;
 }
 
-int findAllOccurrences(char* textData, char* patternData, int displacement, int textLength, int patternLength, int** results)
+int findAllOccurrences(int procId, char* textData, char* patternData, int displacement, int textLength, int patternLength, int** results)
 {
     int i, j, k;
 
@@ -319,11 +356,15 @@ int findAllOccurrences(char* textData, char* patternData, int displacement, int 
     j = 0;
     k = 0;
 
+    
+    
     int lastI = textLength - patternLength;
     int found = 0;
-
+    //printf("PID: %i, %i - %i = %i\n", procId, textLength, patternLength, lastI);
     while (i <= lastI)
     {
+
+        //printf("PID: %i, text[%i]: %c, pattern[%i]: %c\n", procId, k, textData[k], j, patternData[j]);
         if (textData[k] == patternData[j])
         {
             k++;
@@ -331,6 +372,8 @@ int findAllOccurrences(char* textData, char* patternData, int displacement, int 
 
             if (j == patternLength)
             {                
+
+                printf("Found something, i = %i, displs = %i\n", i, displacement);
                 found++;
                 if (found > 1)
                 {
@@ -340,7 +383,6 @@ int findAllOccurrences(char* textData, char* patternData, int displacement, int 
                 else
                     occurrences[found-1] = (i + displacement);
             }
-
         }
         else
         {
@@ -355,16 +397,17 @@ int findAllOccurrences(char* textData, char* patternData, int displacement, int 
         *results = occurrences;
     }
 
+
     return found;
 
 }
 
 int processData(int procId, int searchMode, char* textData, char* patternData, int displacement, int textLength, int patternLength, int** results)
 {
-
+    //printf("Proc % displacement = %i\n", procId, displacement);
     if (searchMode == 0)
     {
-        int result = findOccurrence(procId, textData, patternData, textLength, patternLength);
+        int result = findOccurrence(procId, textData, patternData, textLength, patternLength, displacement);
         if (result)
         {
             //printf("Proc %i found pattern at position %i\n", procId, result);
@@ -378,15 +421,44 @@ int processData(int procId, int searchMode, char* textData, char* patternData, i
     else
     {
         int* dResults = (int*)malloc(sizeof(int));
-        int found = findAllOccurrences(textData, patternData, displacement, textLength, patternLength, &dResults);
+        int found = findAllOccurrences(procId, textData, patternData, displacement, textLength, patternLength, &dResults);
         *results = dResults;
         //int i;
         //printf("Found = %i\n", found);
         //for (i = 0; i < found; i++)
         //{
-        //    printf("Proc %i found pattern at position %i\n", procId, results[i]);
+        //    printf("Proc %i found pattern at position %i\n", procId, *results[i]);
         //}
         return found;
+    }
+}
+
+void writeResults(char buffer[BUFFER_SIZE], int searchMode, int totalFound, int testNumber, int textIndex, int patternIndex, int* results)
+{
+    if (totalFound > 0)
+    {
+        if (!searchMode)
+        {
+            writeToBuffer(buffer, textIndex, patternIndex, -2);
+            printf("Test %i, search mode %i, text %i, pattern %i, found patterns at %i\n", testNumber, searchMode, textIndex, patternIndex, -2);
+        }
+        else
+        {
+            printf("Test %i, search mode %i, text %i, pattern %i, found %i patterns at ", testNumber, searchMode, textIndex, patternIndex, totalFound);
+            int i;
+            for (i = 0; i < totalFound; i++)
+            {
+                writeToBuffer(buffer, textIndex, patternIndex, results[i]);
+                printf("%i ", results[i]);
+            }
+            printf("\n");
+        }
+
+    }
+    else
+    {
+        printf("Test %i, search mode %i, text %i, pattern %i, found patterns at %i\n", testNumber, searchMode, textIndex, patternIndex, -1);
+        writeToBuffer(buffer, textIndex, patternIndex, -1);
     }
 }
 
@@ -415,9 +487,13 @@ void processMaster(int nProc, char* directory)
     int testNumber;
 #pragma endregion
 
+    long programTime = getNanos();
+
     for (testNumber = 0; testNumber < numberOfTests; testNumber++)
     {
         //printf("\nTest: %i", testNumber);
+
+        long time = getNanos();
 
         int searchMode = controlData[testNumber][0];
         int textIndex = controlData[testNumber][1];
@@ -527,9 +603,11 @@ void processMaster(int nProc, char* directory)
 
         }
 
+        time = getNanos() - time;
+        printf("\nTest %i elapsed time = %.09f\n\n", testNumber, (double)time / 1.0e9);
 
-        
-
+        // TODO Fix the function
+        //writeResults(buffer, searchMode, found, testNumber, textIndex, patternIndex, results);
         if (total > 0)
         {
             if (!searchMode)
@@ -557,9 +635,6 @@ void processMaster(int nProc, char* directory)
         }
 
 
-
-        //free(results);
-
         free(procWorkload);
         free(displs);
         free(masterWork);
@@ -570,10 +645,10 @@ void processMaster(int nProc, char* directory)
 
     }
 
+    programTime = getNanos() - programTime;
+    printf("\n\n Program elapsed time = %.09f\n\n", (double)programTime / 1.0e9);
+
     writeBufferToOutput(buffer);
-
-    int i;
-
 
 }
 
@@ -596,8 +671,6 @@ void processSlave(int procId)
 
         char* patternData;
         int patternLength;
-
-
 
         // receive pattern length before pattern data
         MPI_Bcast(&patternLength,
@@ -651,13 +724,10 @@ void processSlave(int procId)
         {
             MPI_Send(results, found, MPI_INT, MASTER, 0,
                 MPI_COMM_WORLD);
-            //free(results);
         }
 
         free(textData);
         free(patternData);
-
-
 
         // receive finish flag before trying to receive pattern data
         MPI_Bcast(&finished,
