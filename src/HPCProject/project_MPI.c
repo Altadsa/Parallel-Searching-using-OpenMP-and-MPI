@@ -46,7 +46,6 @@
 #define PROCESS_DONE 67
 
 // using global variables greatly reduces the number of parameters needed for functions
-int testNumber; // test number
 int procId; // process ID
 int nProc; // number of processes in program
 
@@ -96,12 +95,12 @@ void readFromFile(FILE* f, char** data, int* length)
 /// Reads data from files named filename, writing data into the data array, and 
 /// filelengths into the lengths array
 /// </summary>
-/// <param name="maxFiles"></param>
-/// <param name="filename"></param>
-/// <param name="data"></param>
-/// <param name="lengths"></param>
-/// <param name="count"></param>
-/// <returns></returns>
+/// <param name="maxFiles">The maximum number of files to read.</param>
+/// <param name="directory">The Directory to read the file from.</param>
+/// <param name="filename">The Filename to identify which files to read.</param>
+/// <param name="data">The Character Array to store the read data.</param>
+/// <param name="lengths">The Integer Array to store the lengths of the files.</param>
+/// <returns>The number of files read.</returns>
 int readFiles(const int maxFiles, char* directory, char* filename, char* data[], int lengths[])
 {
     int count = 0;
@@ -120,7 +119,7 @@ int readFiles(const int maxFiles, char* directory, char* filename, char* data[],
             return 0;
 
         readFromFile(f, &data[count], &lengths[count]);
-        printf("read %s %i\n", filename, count);
+        //printf("read %s %i\n", filename, count);
         fclose(f);
 
     }
@@ -221,7 +220,6 @@ void divideWorkload(int* procWork, int textLength, int patternLength)
 {
     // calculate the base number of elements for each process
     int nElements = textLength / nProc;
-    //printf("\nnElements = %i\n", nElements); // confirm base elements 
 
     // set base number of elements for each process i
     int i;
@@ -231,7 +229,6 @@ void divideWorkload(int* procWork, int textLength, int patternLength)
     }
 
     int remainder = textLength % nProc;
-    //printf("\nRemainder = %i\n", remainder); // confirm remainder
 
     // if there are no remainders, we can continue with the program
     if (remainder > 0)
@@ -276,9 +273,8 @@ void setDisplacement(int* displs, int* procWork, int patternLength)
     {
         if (patternLength == 1)
             displs[i] = displs[i - 1] + (procWork[i - 1]);
-        else
-            displs[i] = displs[i - 1] + (procWork[i - 1] - patternLength);
-        //printf("Process %i displacement = %i\n", i, displs[i]);
+        else // if we are accounting for added pattern length, subtract from process work
+            displs[i] = displs[i - 1] + (procWork[i - 1] - patternLength); 
     }
 }
 
@@ -348,7 +344,7 @@ int masterFindOccurrence(char* textData, char* patternData, int textLength, int 
     int found = 0;
 
     int lastI = textLength - patternLength;
-
+    printf("");
     i = 0;
     j = 0;
     k = 0;
@@ -357,9 +353,6 @@ int masterFindOccurrence(char* textData, char* patternData, int textLength, int 
 
     while (i <= lastI && j < patternLength)
     {
-        k++;
-        j++;
-
         if (textData[k] == patternData[j])
         {
             k++;
@@ -383,13 +376,12 @@ int masterFindOccurrence(char* textData, char* patternData, int textLength, int 
             MPI_Recv(&slaveResult, 1, MPI_INT, MPI_ANY_SOURCE, PROCESS_DONE, MPI_COMM_WORLD, &status);
             if (masterTracker[status.MPI_SOURCE]) //ensures slave can only send its result once
                 continue;
-            //printf("Received from %i\n", status.MPI_SOURCE);
+
             masterTracker[status.MPI_SOURCE] = 1; // indicates slave process has completed search
 
             // if slave was successful, inform all other processes that are still searching to stop
             if (slaveResult)
             {
-                //printf("Master on test received value from process %i\n", status.MPI_SOURCE);
                 int n;
                 for (n = 1; n < 4; n++)
                 {
@@ -398,7 +390,6 @@ int masterFindOccurrence(char* textData, char* patternData, int textLength, int 
                         MPI_Send(&found, 1, MPI_INT, MASTER, EXECUTE, MPI_COMM_WORLD);
                     }
                 }
-
                 return found;
             }
         }
@@ -408,7 +399,6 @@ int masterFindOccurrence(char* textData, char* patternData, int textLength, int 
     // if master finds the pattern, inform all other processes that are still searching to stop
     if (j == patternLength)
     {
-        printf("Found at %i\n", (i + displacement));
         found = 1;
         int n;
         for (n = 1; n < 4; n++)
@@ -419,7 +409,6 @@ int masterFindOccurrence(char* textData, char* patternData, int textLength, int 
             }
         }
     }
-
     // return the result
     return found;
 
@@ -455,7 +444,6 @@ int slaveFindOccurrence(char* textData, char* patternData, int textLength, int p
 
     while (i <= lastI && j < patternLength && !found)
     {
-
         if (textData[k] == patternData[j])
         {
             k++;
@@ -484,10 +472,8 @@ int slaveFindOccurrence(char* textData, char* patternData, int textLength, int p
     // if pattern is found by slave
     if (j == patternLength)
     {
-        printf("Slave Found at %i\n", (i+displacement));
         found = 1;
     }
-
     // send result to master
     MPI_Send(&found, 1, MPI_INT, MASTER, PROCESS_DONE, MPI_COMM_WORLD);
 
@@ -574,6 +560,7 @@ int findAllOccurrences(char* textData, char* patternData, int displacement, int 
 /// <returns>The number of pattern occurrences found in the text.</returns>
 int processData(int searchMode, char* textData, char* patternData, int displacement, int textLength, int patternLength, int** results)
 {
+    MPI_Barrier(MPI_COMM_WORLD);
     if (searchMode == 0) // find any occurrence
     {
         int result;
@@ -632,10 +619,9 @@ void processMaster(char* directory)
 #pragma endregion
 
     long programTime = getNanos();
-    //int testNumber;
+    int testNumber;
     for (testNumber = 0; testNumber < numberOfTests; testNumber++)
     {
-        //printf("\nTest: %i", testNumber);
         long time = getNanos();
 
         // test variables
@@ -661,10 +647,6 @@ void processMaster(char* directory)
 
 #pragma region Send Data
 
-        MPI_Bcast(&testNumber,
-            1, MPI_INT, MASTER,
-            MPI_COMM_WORLD);
-
         // send pattern length first so slaves know
         // how large the received pattern is
         MPI_Bcast(&testPatternLength,
@@ -688,7 +670,7 @@ void processMaster(char* directory)
         setDisplacement(displs, procWorkload, testPatternLength);
 
         //debugPrintWorkload(procWorkload);
-        //debugPrintDisplacement(displs);
+        debugPrintDisplacement(displs);
 
         int nElements;
         // scatter workload to processes so they know how many elements are being received
@@ -835,10 +817,6 @@ void processSlave()
     {
 
 #pragma region Declarations and Data Recept
-
-            MPI_Bcast(&testNumber,
-            1, MPI_INT, MASTER,
-            MPI_COMM_WORLD);
 
         // delcare data variables
         char* textData;

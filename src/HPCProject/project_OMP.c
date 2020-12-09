@@ -79,12 +79,12 @@ void readFromFile (FILE *f, char **data, int *length)
 /// Reads data from files named filename, writing data into the data array, and 
 /// filelengths into the lengths array
 /// </summary>
-/// <param name="maxFiles"></param>
-/// <param name="filename"></param>
-/// <param name="data"></param>
-/// <param name="lengths"></param>
-/// <param name="count"></param>
-/// <returns></returns>
+/// <param name="maxFiles">The maximum number of files to read.</param>
+/// <param name="directory">The Directory to read the file from.</param>
+/// <param name="filename">The Filename to identify which files to read.</param>
+/// <param name="data">The Character Array to store the read data.</param>
+/// <param name="lengths">The Integer Array to store the lengths of the files.</param>
+/// <returns>The number of files read.</returns>
 int readFiles(const int maxFiles, char* filename, char *data[], int lengths[])
 {
     int count = 0;
