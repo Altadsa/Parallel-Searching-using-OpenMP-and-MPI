@@ -37,9 +37,6 @@ int patternCount;
 
 char controlData[MAX_TESTS][3];
 
-int maxTexts;
-int maxPatterns;
-
 char* directory;
 
 void outOfMemory()
@@ -78,28 +75,39 @@ void readFromFile (FILE *f, char **data, int *length)
     *length = resultLength;
 }
 
-int readFiles(const int maxFiles, char* filename, char *data[], int lengths[], int *count)
+/// <summary>
+/// Reads data from files named filename, writing data into the data array, and 
+/// filelengths into the lengths array
+/// </summary>
+/// <param name="maxFiles"></param>
+/// <param name="filename"></param>
+/// <param name="data"></param>
+/// <param name="lengths"></param>
+/// <param name="count"></param>
+/// <returns></returns>
+int readFiles(const int maxFiles, char* filename, char *data[], int lengths[])
 {
-    int idx = 0;
+    int count = 0;
     FILE *f;
     char fileName[1000];
-    for (idx; idx < maxFiles; idx++)
+    for (count; count < maxFiles; count++)
     {
 #ifdef DOS
-        sprintf (fileName, "%s\\%s%i.txt", directory, filename, idx);
+        sprintf (fileName, "%s\\%s%i.txt", directory, filename, count);
 #else
-        sprintf (fileName, "%s/%s%i.txt", directory, filename, idx);
+        sprintf (fileName, "%s/%s%i.txt", directory, filename, count);
 #endif
 
         f = fopen(fileName, "r");
         if (f == NULL)
             return 0;
 
-        readFromFile(f, &data[*count], &lengths[*count]);
-        printf("read %s %i\n", filename, idx);
+        readFromFile(f, &data[count], &lengths[count]);
+        printf("read %s %i\n", filename, count);
         fclose(f);
-        *count += 1;
+
     }
+    return count;
 }
 
 /// <summary>
@@ -253,6 +261,7 @@ void findOccurrence(int textNumber, int patternNumber, char buffer[])
                     {
                         patternLoc = i;
                         // write -2 to denote pattern is found
+                        //printf("Pattern found at %i\n", i);
                         writeToBuffer(buffer, textNumber, patternNumber, -2);
                     }
                 }
@@ -296,6 +305,11 @@ void findAllOccurrences(int textNumber, int patternNumber, char buffer[])
     // -1 denotes pattern not found
     int patternLoc = -1;
 
+    // sharing the buffer was simpler than using private buffers and writing to file once buffer limits were reached
+    // although patternLoc doesn't need to be shared here, I observed that it was quicker than using reduction
+    // dynamic scheduling was chosen as it yielded lower elapsed cpu runtimes on average
+    // also since I won't know in advance the large inputs, dynamic is often more useful for imbalanced workloads
+
     #pragma omp parallel for default(none) shared(buffer, patternLoc) \
     private(j, k) firstprivate(text, textLength, pattern, patternLength, lastI, textNumber, patternNumber) \
     num_threads(4) schedule(dynamic,4)
@@ -317,6 +331,7 @@ void findAllOccurrences(int textNumber, int patternNumber, char buffer[])
             // allow only one thread at a time to write to buffer
             #pragma omp critical(set)
             {
+                //printf("Pattern found at %i\n", i);
                 writeToBuffer(buffer, textNumber, patternNumber, i);
                 patternLoc = 1;
             }
@@ -386,8 +401,8 @@ int main(int argc, char **argv)
     directory = argv[1];
 
     // read texts and patterns into arrays.
-    readFiles(MAX_TEXTS, "text", textData, textLengths, &textCount);
-    readFiles(MAX_PATTERNS, "pattern", patternData, patternLengths, &patternCount);
+    textCount = readFiles(MAX_TEXTS, "text", textData, textLengths);
+    patternCount = readFiles(MAX_PATTERNS, "pattern", patternData, patternLengths);
 
     //printf("Text Count = %i, Pattern Count = %i\n", textCount, patternCount);
 
@@ -416,7 +431,7 @@ int main(int argc, char **argv)
 
     // elapsed time of program
     elapsedTime = getNanos() - elapsedTime;
-    printf("\n Program elapsed time = %.09f\n\n", (double)elapsedTime / 1.0e9);
+    printf("\nProgram elapsed time = %.09f\n\n", (double)elapsedTime / 1.0e9);
 
     // write any remaining data file
     writeBufferToOutput(buffer);
